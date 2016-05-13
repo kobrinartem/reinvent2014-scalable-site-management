@@ -229,9 +229,11 @@ class Operation(object):
 
         self.post_elb_registration(kwargs['Name'], kwargs['LoadBalancerName'])
 
-        if not self._is_instance_healthy(kwargs['LoadBalancerName'], kwargs['Ec2InstanceId']):
-            log("Instance {0} did not come online after deploy. Aborting remaining deployment".format(kwargs['Name']))
-            sys.exit(1)
+        for instance in kwargs['Ec2InstanceId']:
+
+            if not self._is_instance_healthy(kwargs['LoadBalancerName'], instance['InstanceId']):
+                log("Instance {0} did not come online after deploy. Aborting remaining deployment".format(kwargs['Name']))
+                sys.exit(1)
 
     def _remove_instance_from_elb(self, **kwargs):
         deregister_response = self._make_api_call('elb', 'deregister_instances_from_load_balancer',

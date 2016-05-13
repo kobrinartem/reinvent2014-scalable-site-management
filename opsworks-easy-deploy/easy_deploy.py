@@ -109,12 +109,12 @@ class Operation(object):
 
         all_instances = self._make_api_call('opsworks', 'describe_instances', LayerId=self.layer_id)
 
-        ec2_instance_ids = []
 
         if len(all_instances['Instances']) > 2:
             chunks = chunkIt(all_instances['Instances'], 3)
             for chunk in chunks:
                 instance_ids = []
+                ec2_instance_ids = []
                 hostnames = ''
                 for each in chunk:
                     if each['Status'] != 'online':
@@ -132,6 +132,7 @@ class Operation(object):
                     continue
 
                 hostname = each['Hostname']
+                ec2_instance_ids = []
                 instance_id = each['InstanceId']
                 ec2_instance_ids.append({'InstanceId': each['Ec2InstanceId']})
 

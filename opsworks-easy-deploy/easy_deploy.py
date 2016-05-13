@@ -24,6 +24,18 @@ import arrow
 import botocore.session
 
 
+def chunkIt(seq, num):
+  avg = len(seq) / float(num)
+  out = []
+  last = 0.0
+
+  while last < len(seq):
+    out.append(seq[int(last):int(last + avg)])
+    last += avg
+
+  return out
+
+
 class Operation(object):
     def __init__(self, context):
         self.session = botocore.session.get_session()
@@ -87,23 +99,43 @@ class Operation(object):
                 deployment_instance_ids.append(each['InstanceId'])
         self._deploy_to(InstanceIds=deployment_instance_ids, Name="{0} instances".format(self.layer_name), Comment=comment)
 
+
     def layer_rolling(self, comment):
         load_balancer_name = self._get_opsworks_elb_name()
-
+ 
         if load_balancer_name is not None:
             self.pre_deployment_hooks.append(self._remove_instance_from_elb)
             self.post_deployment_hooks.append(self._add_instance_to_elb)
 
         all_instances = self._make_api_call('opsworks', 'describe_instances', LayerId=self.layer_id)
-        for each in all_instances['Instances']:
-            if each['Status'] != 'online':
-                continue
 
-            hostname = each['Hostname']
-            instance_id = each['InstanceId']
-            ec2_instance_id = each['Ec2InstanceId']
+        ec2_instance_ids = []
 
-            self._deploy_to(InstanceIds=[instance_id], Name=hostname, Comment=comment, LoadBalancerName=load_balancer_name, Ec2InstanceId=ec2_instance_id)
+        if len(all_instances['Instances']) > 2:
+            chunks = chunkIt(all_instances['Instances'], 3)
+            for chunk in chunks:
+                instance_ids = []
+                hostnames = ''
+                for each in chunk:
+                    if each['Status'] != 'online':
+                        continue
+
+                    instance_ids.append(each['InstanceId'])
+                    ec2_instance_ids.append({'InstanceId': each['Ec2InstanceId']})
+                hostname = ', '.join(instance_ids)
+                print ec2_instance_ids
+                self._deploy_to(InstanceIds=instance_ids, Name=hostname, Comment=comment, Ec2InstanceId=ec2_instance_ids, LoadBalancerName=load_balancer_name)
+
+        else:
+            for each in all_instances['Instances']:
+                if each['Status'] != 'online':
+                    continue
+
+                hostname = each['Hostname']
+                instance_id = each['InstanceId']
+                ec2_instance_ids.append({'InstanceId': each['Ec2InstanceId']})
+
+                self._deploy_to(InstanceIds=[instance_id], Name=hostname, Comment=comment, Ec2InstanceId=ec2_instance_ids, LoadBalancerName=load_balancer_name)
 
     def instances_at_once(self, host_names, comment):
         all_instances = self._make_api_call('opsworks', 'describe_instances', StackId=self.stack_id)
@@ -193,7 +225,7 @@ class Operation(object):
     def _add_instance_to_elb(self, **kwargs):
         self._make_api_call('elb', 'register_instances_with_load_balancer',
                             LoadBalancerName=kwargs['LoadBalancerName'],
-                            Instances=[{'InstanceId': kwargs['Ec2InstanceId']}])
+                            Instances=kwargs['Ec2InstanceId'])
 
         self.post_elb_registration(kwargs['Name'], kwargs['LoadBalancerName'])
 
@@ -204,7 +236,7 @@ class Operation(object):
     def _remove_instance_from_elb(self, **kwargs):
         deregister_response = self._make_api_call('elb', 'deregister_instances_from_load_balancer',
                                                   LoadBalancerName=kwargs['LoadBalancerName'],
-                                                  Instances=[{'InstanceId': kwargs['Ec2InstanceId']}])
+                                                  Instances=kwargs['Ec2InstanceId'])
         log("Removed {0} from ELB {1}. There are still {2} instance(s) online".format(kwargs['Name'], kwargs['LoadBalancerName'], len(deregister_response['Instances'])))
 
         self._wait_for_elb(kwargs['LoadBalancerName'])

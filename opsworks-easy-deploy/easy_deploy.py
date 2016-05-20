@@ -109,7 +109,6 @@ class Operation(object):
 
         all_instances = self._make_api_call('opsworks', 'describe_instances', LayerId=self.layer_id)
 
-
         if len(all_instances['Instances']) > 2:
             chunks = chunkIt(all_instances['Instances'], 3)
             for chunk in chunks:
@@ -125,7 +124,8 @@ class Operation(object):
                 hostname = ', '.join(instance_ids)
                 print ec2_instance_ids
                 self._deploy_to(InstanceIds=instance_ids, Name=hostname, Comment=comment, Ec2InstanceId=ec2_instance_ids, LoadBalancerName=load_balancer_name)
-
+        elif len(all_instances['Instances']) < 2:
+            print "Only 1 server behind elb. Do Nothing!"
         else:
             for each in all_instances['Instances']:
                 if each['Status'] != 'online':
